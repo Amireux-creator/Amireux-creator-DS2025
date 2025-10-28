@@ -1,0 +1,300 @@
+#include <iostream>
+#include <vector>
+#include <cmath>
+#include <algorithm>
+#include <ctime>
+#include <cstdlib>
+#include <iomanip>  // 新增：用于 setprecision 控制输出精度
+using namespace std;
+
+// 1. 定义复数类
+class Complex {
+private:
+    double real;  // 实部
+    double imag;  // 虚部
+
+public:
+    // 构造函数：默认构造、带参构造
+    Complex(double r = 0.0, double i = 0.0) : real(r), imag(i) {}
+
+    // 获取实部、虚部
+    double getReal() const { return real; }
+    double getImag() const { return imag; }
+
+    // 计算复数的模：sqrt(实部² + 虚部²)
+    double getModulus() const {
+        return sqrt(real * real + imag * imag);
+    }
+
+    // 重载 == 运算符：实部和虚部均相同（允许浮点数微小误差）
+    bool operator==(const Complex& other) const {
+        const double eps = 1e-6;  // 浮点数比较误差阈值
+        return (fabs(real - other.real) < eps) && (fabs(imag - other.imag) < eps);
+    }
+
+    // 重载 << 运算符：便于输出复数格式（如 3.20 + 5.10i 或 2.50 - 1.80i）
+    friend ostream& operator<<(ostream& os, const Complex& c) {
+        if (c.imag >= 0) {
+            os << fixed;
+            os.precision(2);  // 保留2位小数
+            os << c.real << " + " << c.imag << "i";
+        } else {
+            os << fixed;
+            os.precision(2);
+            os << c.real << " - " << fabs(c.imag) << "i";
+        }
+        return os;
+    }
+};
+
+// 2. 排序规则：先按模升序，模相同则按实部升序
+bool compareByModulus(const Complex& a, const Complex& b) {
+    const double eps = 1e-6;
+    double modA = a.getModulus();
+    double modB = b.getModulus();
+    
+    if (fabs(modA - modB) > eps) {
+        return modA < modB;  // 模小的在前
+    } else {
+        return a.getReal() < b.getReal();  // 模相同，实部小的在前
+    }
+}
+
+// 3. 复数向量工具函数
+// （1）生成随机无序复数向量（含重复项）
+vector<Complex> generateRandomVector(int length, double minVal = -100.0, double maxVal = 100.0) {
+    vector<Complex> vec;
+    srand((unsigned int)time(0));  // 初始化随机种子
+    for (int i = 0; i < length; ++i) {
+        // 生成 [minVal, maxVal] 范围内的随机实部和虚部（保留2位小数）
+        double real = minVal + (rand() % (int)((maxVal - minVal) * 100)) / 100.0;
+        double imag = minVal + (rand() % (int)((maxVal - minVal) * 100)) / 100.0;
+        vec.push_back(Complex(real, imag));
+    }
+    return vec;
+}
+
+// （2）查找元素：返回第一个匹配元素的索引（实部+虚部均相同），未找到返回-1
+int findElement(const vector<Complex>& vec, const Complex& target) {
+    for (int i = 0; i < vec.size(); ++i) {
+        if (vec[i] == target) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// （3）删除元素：删除所有与target匹配的元素，返回删除的个数
+int deleteElement(vector<Complex>& vec, const Complex& target) {
+    int count = 0;
+    auto it = vec.begin();
+    while (it != vec.end()) {
+        if (*it == target) {
+            it = vec.erase(it);  // erase后迭代器自动指向下一个元素
+            count++;
+        } else {
+            ++it;
+        }
+    }
+    return count;
+}
+
+// （4）向量唯一化：删除重复元素（保留第一个出现的）
+void uniqueVector(vector<Complex>& vec) {
+    vector<Complex> temp;
+    for (const auto& c : vec) {
+        // 检查temp中是否已有该元素，无则加入
+        if (findElement(temp, c) == -1) {
+            temp.push_back(c);
+        }
+    }
+    vec.swap(temp);  // 用去重后的temp替换原向量
+}
+
+// 4. 排序算法实现
+// （1）起泡排序
+void bubbleSort(vector<Complex>& vec) {
+    int n = vec.size();
+    for (int i = 0; i < n - 1; ++i) {
+        bool swapped = false;  // 优化：无交换则提前退出
+        for (int j = 0; j < n - 1 - i; ++j) {
+            if (!compareByModulus(vec[j], vec[j + 1])) {
+                swap(vec[j], vec[j + 1]);
+                swapped = true;
+            }
+        }
+        if (!swapped) break;
+    }
+}
+
+// （2）归并排序（递归实现）
+void merge(vector<Complex>& vec, int left, int mid, int right) {
+    int n1 = mid - left + 1;
+    int n2 = right - mid;
+    // 临时数组存储左右两部分
+    vector<Complex> L(n1), R(n2);
+    for (int i = 0; i < n1; ++i) L[i] = vec[left + i];
+    for (int j = 0; j < n2; ++j) R[j] = vec[mid + 1 + j];
+
+    // 合并临时数组到原数组
+    int i = 0, j = 0, k = left;
+    while (i < n1 && j < n2) {
+        if (compareByModulus(L[i], R[j])) {
+            vec[k++] = L[i++];
+        } else {
+            vec[k++] = R[j++];
+        }
+    }
+    // 拷贝剩余元素
+    while (i < n1) vec[k++] = L[i++];
+    while (j < n2) vec[k++] = R[j++];
+}
+
+void mergeSort(vector<Complex>& vec, int left, int right) {
+    if (left < right) {
+        int mid = left + (right - left) / 2;  // 避免溢出
+        mergeSort(vec, left, mid);           // 左半部分排序
+        mergeSort(vec, mid + 1, right);      // 右半部分排序
+        merge(vec, left, mid, right);        // 合并
+    }
+}
+
+// 5. 区间查找：在已排序向量中，查找模介于 [m1, m2) 的所有元素
+vector<Complex> rangeSearch(const vector<Complex>& sortedVec, double m1, double m2) {
+    vector<Complex> result;
+    for (const auto& c : sortedVec) {
+        double mod = c.getModulus();
+        if (mod >= m1 && mod < m2) {
+            result.push_back(c);
+        }
+        // 优化：已排序向量，模超过m2则提前退出
+        if (mod >= m2) {
+            break;
+        }
+    }
+    return result;
+}
+
+// 6. 排序效率测试：测试顺序、乱序、逆序向量的排序时间
+void testSortEfficiency(int vectorLength) {
+    // 1. 生成基础乱序向量
+    vector<Complex> randomVec = generateRandomVector(vectorLength);
+    // 2. 生成顺序向量（排序后的乱序向量）
+    vector<Complex> sortedVec = randomVec;
+    mergeSort(sortedVec, 0, sortedVec.size() - 1);
+    // 3. 生成逆序向量（反转顺序向量）
+    vector<Complex> reversedVec = sortedVec;
+    reverse(reversedVec.begin(), reversedVec.end());
+
+    // 定义测试函数：输入向量和排序函数，返回排序耗时（毫秒）
+    auto testSortTime = [](vector<Complex> vec, void (*sortFunc)(vector<Complex>&)) -> double {
+        clock_t start = clock();
+        sortFunc(vec);
+        clock_t end = clock();
+        return (double)(end - start) / CLOCKS_PER_SEC * 1000;  // 转换为毫秒
+    };
+
+    // 定义归并排序的适配函数（适配上述testSortTime的参数格式）
+    auto mergeSortAdapter = [](vector<Complex>& vec) {
+        mergeSort(vec, 0, vec.size() - 1);
+    };
+
+    // 输出测试结果
+    cout << "\n=== 排序效率测试（向量长度：" << vectorLength << "）===" << endl;
+    // 起泡排序
+    cout << "起泡排序：" << endl;
+    cout << "  乱序向量耗时：" << testSortTime(randomVec, bubbleSort) << " ms" << endl;
+    cout << "  顺序向量耗时：" << testSortTime(sortedVec, bubbleSort) << " ms" << endl;
+    cout << "  逆序向量耗时：" << testSortTime(reversedVec, bubbleSort) << " ms" << endl;
+    // 归并排序
+    cout << "归并排序：" << endl;
+    cout << "  乱序向量耗时：" << testSortTime(randomVec, mergeSortAdapter) << " ms" << endl;
+    cout << "  顺序向量耗时：" << testSortTime(sortedVec, mergeSortAdapter) << " ms" << endl;
+    cout << "  逆序向量耗时：" << testSortTime(reversedVec, mergeSortAdapter) << " ms" << endl;
+}
+
+// 7. 主函数：测试所有功能
+int main() {
+    // 初始化随机种子
+    srand((unsigned int)time(0));
+
+    // -------------------------- （1）测试向量基本操作 --------------------------
+    cout << "=== 测试向量基本操作 ===" << endl;
+    // 生成长度为10的随机复数向量
+    vector<Complex> vec = generateRandomVector(10);
+    cout << "1. 原始无序向量：" << endl;
+    for (int i = 0; i < vec.size(); ++i) {
+        cout << "  索引" << i << "：" << vec[i] << "（模：" << vec[i].getModulus() << "）" << endl;
+    }
+
+    // 置乱（用random_shuffle打乱，C++17后建议用shuffle，此处兼容旧版本）
+    random_shuffle(vec.begin(), vec.end());
+    cout << "\n2. 置乱后向量：" << endl;
+    for (int i = 0; i < vec.size(); ++i) {
+        cout << "  索引" << i << "：" << vec[i] << endl;
+    }
+
+    // 查找：随机选一个元素作为目标（这里选索引2的元素）
+    if (vec.size() > 2) {
+        Complex target = vec[2];
+        int findIdx = findElement(vec, target);
+        cout << "\n3. 查找元素 " << target << "：" << endl;
+        if (findIdx != -1) {
+            cout << "  找到，索引为：" << findIdx << endl;
+        } else {
+            cout << "  未找到" << endl;
+        }
+    }
+
+    // 插入：在索引5位置插入一个新复数（3.14, 2.71）
+    Complex insertVal(3.14, 2.71);
+    if (vec.size() > 5) {
+        vec.insert(vec.begin() + 5, insertVal);
+    } else {
+        vec.push_back(insertVal);  // 若向量长度不足5，直接尾插
+    }
+    cout << "\n4. 插入元素 " << insertVal << " 后：" << endl;
+    for (int i = 0; i < vec.size(); ++i) {
+        cout << "  索引" << i << "：" << vec[i] << endl;
+    }
+
+    // 删除：删除所有与insertVal相同的元素
+    int deleteCount = deleteElement(vec, insertVal);
+    cout << "\n5. 删除元素 " << insertVal << "：" << endl;
+    cout << "  共删除 " << deleteCount << " 个元素" << endl;
+    cout << "  删除后向量：" << endl;
+    for (int i = 0; i < vec.size(); ++i) {
+        cout << "  索引" << i << "：" << vec[i] << endl;
+    }
+
+    // 唯一化
+    uniqueVector(vec);
+    cout << "\n6. 唯一化后向量（长度：" << vec.size() << "）：" << endl;
+    for (int i = 0; i < vec.size(); ++i) {
+        cout << "  索引" << i << "：" << vec[i] << endl;
+    }
+
+    // -------------------------- （2）测试排序效率 --------------------------
+    // 建议向量长度设为1000~5000（起泡排序在长度10000以上会较慢，便于对比差异）
+    testSortEfficiency(2000);
+
+    // -------------------------- （3）测试区间查找 --------------------------
+    cout << "\n=== 测试区间查找 ===" << endl;
+    // 生成长度为20的向量并排序（区间查找需基于已排序向量）
+    vector<Complex> sortedVec = generateRandomVector(20);
+    mergeSort(sortedVec, 0, sortedVec.size() - 1);
+    cout << "1. 已排序向量（按模升序）：" << endl;
+    for (const auto& c : sortedVec) {
+        cout << "  " << c << "（模：" << fixed << setprecision(2) << c.getModulus() << "）" << endl;
+    }
+
+    // 查找模介于 [50, 100) 的元素（可自行调整m1和m2）
+    double m1 = 50.0, m2 = 100.0;
+    vector<Complex> rangeResult = rangeSearch(sortedVec, m1, m2);
+    cout << "\n2. 模介于 [" << m1 << ", " << m2 << ") 的元素（共 " << rangeResult.size() << " 个）：" << endl;
+    for (const auto& c : rangeResult) {
+        cout << "  " << c << "（模：" << fixed << setprecision(2) << c.getModulus() << "）" << endl;
+    }
+
+    return 0;
+}
