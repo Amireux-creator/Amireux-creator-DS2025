@@ -1,0 +1,219 @@
+#include <iostream>
+#include <string>
+#include <cctype>
+using namespace std;
+
+// 1. 栈数据结构实现（模板类，支持泛型）
+template <typename T>
+class Stack {
+private:
+    struct Node {
+        T data;
+        Node* next;
+        Node(T val) : data(val), next(nullptr) {}
+    };
+    Node* topNode;  // 栈顶指针
+    int size;       // 栈元素个数
+
+public:
+    // 构造函数
+    Stack() : topNode(nullptr), size(0) {}
+
+    // 析构函数：释放所有节点
+    ~Stack() {
+        while (!isEmpty()) {
+            pop();
+        }
+    }
+
+    // 入栈
+    void push(T val) {
+        Node* newNode = new Node(val);
+        newNode->next = topNode;
+        topNode = newNode;
+        size++;
+    }
+
+    // 出栈
+    void pop() {
+        if (isEmpty()) return;
+        Node* temp = topNode;
+        topNode = topNode->next;
+        delete temp;
+        size--;
+    }
+
+    // 获取栈顶元素
+    T top() const {
+        if (isEmpty()) throw runtime_error("栈为空，无法获取栈顶元素");
+        return topNode->data;
+    }
+
+    // 判断栈是否为空
+    bool isEmpty() const {
+        return topNode == nullptr;
+    }
+
+    // 获取栈大小
+    int getSize() const {
+        return size;
+    }
+};
+
+// 2. 字符串计算器核心功能
+class Calculator {
+private:
+    // 判断运算符优先级：返回值越大，优先级越高
+    int getPriority(char op) const {
+        switch (op) {
+            case '(': return 0;  // 左括号优先级最低
+            case '+':
+            case '-': return 1;
+            case '*':
+            case '/': return 2;
+            default: return -1;  // 无效运算符
+        }
+    }
+
+    // 执行二元运算
+    int calculate(int a, int b, char op) const {
+        switch (op) {
+            case '+': return a + b;
+            case '-': return a - b;  // 注意顺序：b是左操作数，a是右操作数
+            case '*': return a * b;
+            case '/': 
+                if (a == 0) throw runtime_error("除数不能为0");
+                return b / a;  // 注意顺序：b/a
+            default: throw runtime_error("无效运算符");
+        }
+    }
+
+public:
+    // 计算表达式结果（仅支持整数运算）
+    int evaluate(const string& expr) {
+        Stack<int> numStack;    // 存储操作数
+        Stack<char> opStack;    // 存储运算符
+
+        for (int i = 0; i < expr.size(); ++i) {
+            char c = expr[i];
+
+            // 跳过空格
+            if (isspace(c)) continue;
+
+            // 处理数字（支持多位数）
+            if (isdigit(c)) {
+                int num = 0;
+                while (i < expr.size() && isdigit(expr[i])) {
+                    num = num * 10 + (expr[i] - '0');
+                    i++;
+                }
+                i--;  // 回退一位，避免跳过下一个字符
+                numStack.push(num);
+            }
+
+            // 处理左括号
+            else if (c == '(') {
+                opStack.push(c);
+            }
+
+            // 处理右括号：计算到匹配的左括号
+            else if (c == ')') {
+                // 弹出运算符直到遇到左括号
+                while (!opStack.isEmpty() && opStack.top() != '(') {
+                    char op = opStack.top();
+                    opStack.pop();
+
+                    if (numStack.getSize() < 2) {
+                        throw runtime_error("表达式格式错误（缺少操作数）");
+                    }
+                    int a = numStack.top(); numStack.pop();
+                    int b = numStack.top(); numStack.pop();
+                    numStack.push(calculate(a, b, op));
+                }
+
+                if (opStack.isEmpty()) {
+                    throw runtime_error("表达式格式错误（括号不匹配）");
+                }
+                opStack.pop();  // 弹出左括号
+            }
+
+            // 处理运算符
+            else if (c == '+' || c == '-' || c == '*' || c == '/') {
+                // 弹出优先级更高或相等的运算符并计算
+                while (!opStack.isEmpty() && getPriority(opStack.top()) >= getPriority(c)) {
+                    char op = opStack.top();
+                    opStack.pop();
+
+                    if (numStack.getSize() < 2) {
+                        throw runtime_error("表达式格式错误（缺少操作数）");
+                    }
+                    int a = numStack.top(); numStack.pop();
+                    int b = numStack.top(); numStack.pop();
+                    numStack.push(calculate(a, b, op));
+                }
+                opStack.push(c);  // 当前运算符入栈
+            }
+
+            // 无效字符
+            else {
+                throw runtime_error("表达式包含无效字符");
+            }
+        }
+
+        // 处理剩余运算符
+        while (!opStack.isEmpty()) {
+            char op = opStack.top();
+            opStack.pop();
+
+            // 若剩余左括号，说明括号不匹配
+            if (op == '(') {
+                throw runtime_error("表达式格式错误（括号不匹配）");
+            }
+
+            if (numStack.getSize() < 2) {
+                throw runtime_error("表达式格式错误（缺少操作数）");
+            }
+            int a = numStack.top(); numStack.pop();
+            int b = numStack.top(); numStack.pop();
+            numStack.push(calculate(a, b, op));
+        }
+
+        // 最终栈中应只剩一个结果
+        if (numStack.getSize() != 1) {
+            throw runtime_error("表达式格式错误（操作数数量异常）");
+        }
+
+        return numStack.top();
+    }
+};
+
+// 3. 案例测试
+int main() {
+    Calculator calc;
+    // 测试用例
+    string testCases[] = {
+        "3 + 5 * 2",                // 13（先乘后加）
+        "(3 + 5) * 2",              // 16（括号优先）
+        "10 / 2 - 3",               // 2（先除后减）
+        "20 - 5 * (3 + 1)",         // 0（括号内先算，再乘后减）
+        "  100 + 200 / (50 - 30)  ", // 110（忽略空格）
+        "5 / 0",                    // 除数为0（错误）
+        "3 + (5 * 2",               // 括号不匹配（错误）
+        "10 - ",                    // 缺少操作数（错误）
+        "7 * a + 3"                 // 无效字符（错误）
+    };
+
+    // 执行测试
+    for (const string& expr : testCases) {
+        cout << "测试表达式：\"" << expr << "\"" << endl;
+        try {
+            int result = calc.evaluate(expr);
+            cout << "计算结果：" << result << endl;
+        } catch (const exception& e) {
+            cout << "错误：" << e.what() << endl;
+        }
+        cout << "-------------------------" << endl;
+    }
+
+    return 0;
+}
