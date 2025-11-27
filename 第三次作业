@@ -1,0 +1,432 @@
+#include <iostream>
+#include <vector>
+#include <queue>
+#include <stack>
+#include <unordered_map>
+#include <unordered_set>
+#include <climits>
+#include <algorithm>
+#include <string>
+#include <set>
+using namespace std;
+
+class UndirectedGraph {
+public:
+    vector<string> nodes;                  
+    unordered_map<string, int> nodeIndex;
+    vector<vector<int>> adjMatrix;        
+    int nodeCount;                        
+
+   
+    UndirectedGraph(const vector<string>& nodeList) {
+        nodes = nodeList;
+        nodeCount = nodes.size();
+        for (int i = 0; i < nodeCount; ++i) {
+            nodeIndex[nodes[i]] = i;
+        }
+        
+        adjMatrix.resize(nodeCount, vector<int>(nodeCount, 0));
+    }
+
+    
+    void addEdge(const string& u, const string& v, int weight = 1) {
+        int i = nodeIndex[u];
+        int j = nodeIndex[v];
+        adjMatrix[i][j] = weight;
+        adjMatrix[j][i] = weight;
+    }
+
+    
+    void printAdjMatrix() const {
+        cout << "\t";
+        for (const string& node : nodes) {
+            cout << node << "\t";
+        }
+        cout << endl;
+        for (int i = 0; i < nodeCount; ++i) {
+            cout << nodes[i] << "\t";
+            for (int j = 0; j < nodeCount; ++j) {
+                cout << adjMatrix[i][j] << "\t";
+            }
+            cout << endl;
+        }
+    }
+};
+
+
+
+vector<string> BFS(const UndirectedGraph& graph, const string& startNode) {
+    vector<string> bfsOrder;
+    unordered_set<string> visited;
+    queue<string> q;
+
+    q.push(startNode);
+    visited.insert(startNode);
+
+    while (!q.empty()) {
+        string current = q.front();
+        q.pop();
+        bfsOrder.push_back(current);
+
+        for (const string& neighbor : graph.nodes) {
+            int currIdx = graph.nodeIndex[current];
+            int neighborIdx = graph.nodeIndex[neighbor];
+            if (graph.adjMatrix[currIdx][neighborIdx] > 0 && !visited.count(neighbor)) {
+                visited.insert(neighbor);
+                q.push(neighbor);
+            }
+        }
+    }
+    return bfsOrder;
+}
+
+
+void DFSHelper(const UndirectedGraph& graph, const string& current,
+               unordered_set<string>& visited, vector<string>& dfsOrder) {
+    visited.insert(current);
+    dfsOrder.push_back(current);
+
+    for (const string& neighbor : graph.nodes) {
+        int currIdx = graph.nodeIndex[current];
+        int neighborIdx = graph.nodeIndex[neighbor];
+        if (graph.adjMatrix[currIdx][neighborIdx] > 0 && !visited.count(neighbor)) {
+            DFSHelper(graph, neighbor, visited, dfsOrder);
+        }
+    }
+}
+
+
+vector<string> DFS(const UndirectedGraph& graph, const string& startNode) {
+    vector<string> dfsOrder;
+    unordered_set<string> visited;
+    DFSHelper(graph, startNode, visited, dfsOrder);
+    return dfsOrder;
+}
+
+void printTraversal(const string& algo, const vector<string>& order) {
+    cout << algo << " 遍历顺序：";
+    for (int i = 0; i < order.size(); ++i) {
+        if (i > 0) cout << " -> ";
+        cout << order[i];
+    }
+    cout << endl;
+}
+
+
+struct DijkstraRes {
+    unordered_map<string, int> dist;   
+    unordered_map<string, string> prev;
+};
+
+
+DijkstraRes Dijkstra(const UndirectedGraph& graph, const string& startNode) {
+    DijkstraRes res;
+    unordered_set<string> visited;
+    
+    priority_queue<pair<int, string>, vector<pair<int, string>>, greater<>> pq;
+
+    
+    for (const string& node : graph.nodes) {
+        res.dist[node] = INT_MAX;
+        res.prev[node] = "";
+    }
+    res.dist[startNode] = 0;
+    pq.push({0, startNode});
+
+    while (!pq.empty()) {
+        auto [currDist, curr] = pq.top();
+        pq.pop();
+
+        if (visited.count(curr)) continue;
+        visited.insert(curr);
+
+       
+        for (const string& neighbor : graph.nodes) {
+            int currIdx = graph.nodeIndex[curr];
+            int neighborIdx = graph.nodeIndex[neighbor];
+            int weight = graph.adjMatrix[currIdx][neighborIdx];
+
+            if (weight > 0 && !visited.count(neighbor) && currDist + weight < res.dist[neighbor]) {
+                res.dist[neighbor] = currDist + weight;
+                res.prev[neighbor] = curr;
+                pq.push({res.dist[neighbor], neighbor});
+            }
+        }
+    }
+    return res;
+}
+
+
+vector<string> getShortestPath(const DijkstraRes& res, const string& start, const string& target) {
+    vector<string> path;
+    string curr = target;
+
+    while (!curr.empty()) {
+        path.push_back(curr);
+        curr = res.prev[curr];
+        if (path.size() > res.prev.size()) break; 
+    }
+
+    if (path.back() != start) return {"无路径"};
+    reverse(path.begin(), path.end());
+    return path;
+}
+
+
+void printShortestPaths(const DijkstraRes& res, const string& start) {
+    cout << "\n从 " << start << " 出发的最短路径：" << endl;
+    for (const string& target : res.dist.keys()) {
+        if (res.dist[target] == INT_MAX) {
+            cout << start << " -> " << target << "：无连通路径" << endl;
+            continue;
+        }
+        vector<string> path = getShortestPath(res, start, target);
+        cout << start << " -> " << target << "：";
+        for (int i = 0; i < path.size(); ++i) {
+            if (i > 0) cout << " -> ";
+            cout << path[i];
+        }
+        cout << "（距离：" << res.dist[target] << "）" << endl;
+    }
+}
+
+
+struct Edge {
+    string u, v;
+    int weight;
+    Edge(string u_, string v_, int w_) : u(u_), v(v_), weight(w_) {}
+};
+
+
+vector<Edge> Prim(const UndirectedGraph& graph, const string& startNode) {
+    vector<Edge> mst;
+    unordered_set<string> selected;
+    selected.insert(startNode);
+
+    while (selected.size() < graph.nodeCount) {
+        Edge minEdge("", "", INT_MAX);
+        
+        for (const string& u : selected) {
+            int uIdx = graph.nodeIndex[u];
+            for (const string& v : graph.nodes) {
+                if (selected.count(v) || graph.adjMatrix[uIdx][graph.nodeIndex[v]] == 0) continue;
+                int w = graph.adjMatrix[uIdx][graph.nodeIndex[v]];
+                if (w < minEdge.weight) {
+                    minEdge = Edge(u, v, w);
+                }
+            }
+        }
+        if (minEdge.weight == INT_MAX) break; 
+        mst.push_back(minEdge);
+        selected.insert(minEdge.v);
+    }
+    return mst;
+}
+
+
+void printMST(const vector<Edge>& mst) {
+    cout << "\n最小支撑树（MST）边集合：" << endl;
+    int totalWeight = 0;
+    for (const Edge& e : mst) {
+        cout << e.u << " - " << e.v << "（权重：" << e.weight << "）" << endl;
+        totalWeight += e.weight;
+    }
+    cout << "MST 总权值：" << totalWeight << endl;
+}
+
+
+
+struct TarjanRes {
+    unordered_set<string> articulationPoints; 
+    vector<vector<pair<string, string>>> bcc; /
+};
+
+TarjanRes Tarjan(const UndirectedGraph& graph, const string& startNode) {
+    TarjanRes res;
+    unordered_map<string, int> disc, low; 
+    int time = 0;
+    stack<pair<string, string>> edgeStack; 
+    unordered_set<string> visited;
+
+    function<void(const string&, const string&)> dfs = [&](const string& u, const string& parent) {
+        disc[u] = low[u] = ++time;
+        visited.insert(u);
+        int children = 0;
+
+        for (const string& v : graph.nodes) {
+            int uIdx = graph.nodeIndex[u];
+            int vIdx = graph.nodeIndex[v];
+            if (graph.adjMatrix[uIdx][vIdx] == 0) continue; // 无边
+
+            if (!visited.count(v)) {
+                children++;
+                edgeStack.push({u, v});
+                dfs(v, u);
+                low[u] = min(low[u], low[v]);
+
+                
+                bool isArticulation = (parent.empty() && children >= 2) || 
+                                     (!parent.empty() && low[v] >= disc[u]);
+                if (isArticulation) {
+                    res.articulationPoints.insert(u);
+                    
+                    vector<pair<string, string>> component;
+                    while (true) {
+                        auto edge = edgeStack.top();
+                        edgeStack.pop();
+                        component.push_back(edge);
+                        if ((edge.first == u && edge.second == v) || (edge.first == v && edge.second == u)) {
+                            break;
+                        }
+                    }
+                    res.bcc.push_back(component);
+                }
+            } else if (v != parent && disc[v] < disc[u]) { // 回边（非父节点）
+                edgeStack.push({u, v});
+                low[u] = min(low[u], disc[v]);
+            }
+        }
+    };
+
+    
+    dfs(startNode, "");
+    
+    if (!edgeStack.empty()) {
+        vector<pair<string, string>> component;
+        while (!edgeStack.empty()) {
+            component.push_back(edgeStack.top());
+            edgeStack.pop();
+        }
+        res.bcc.push_back(component);
+    }
+
+    return res;
+}
+
+/
+vector<set<pair<string, string>>> normalizeBCC(const vector<vector<pair<string, string>>>& bcc) {
+    vector<set<pair<string, string>>> normalized;
+    for (const auto& comp : bcc) {
+        set<pair<string, string>> s;
+        for (const auto& [u, v] : comp) {
+            s.insert(u < v ? make_pair(u, v) : make_pair(v, u));
+        }
+        normalized.push_back(s);
+    }
+    sort(normalized.begin(), normalized.end()); 
+    return normalized;
+}
+
+
+void printTarjanRes(const TarjanRes& res, const string& start) {
+    cout << "\n起点 " << start << " 结果：" << endl;
+    
+    cout << "关节点：";
+    if (res.articulationPoints.empty()) {
+        cout << "无";
+    } else {
+        int i = 0;
+        for (const string& ap : res.articulationPoints) {
+            if (i > 0) cout << ", ";
+            cout << ap;
+            i++;
+        }
+    }
+    cout << endl;
+    
+    cout << "双连通分量（共 " << res.bcc.size() << " 个）：" << endl;
+    for (int i = 0; i < res.bcc.size(); ++i) {
+        cout << "  分量" << i + 1 << "：";
+        for (int j = 0; j < res.bcc[i].size(); ++j) {
+            auto [u, v] = res.bcc[i][j];
+            if (j > 0) cout << ", ";
+            cout << "(" << u << "," << v << ")";
+        }
+        cout << endl;
+    }
+}
+
+
+int main() {
+    
+    vector<string> graph1Nodes = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"};
+    UndirectedGraph graph1(graph1Nodes);
+    // 自定义图1边（带权重，模拟合理结构）
+    vector<tuple<string, string, int>> graph1Edges = {
+        {"A", "B", 2}, {"A", "C", 3}, {"B", "D", 1}, {"B", "E", 4}, {"C", "F", 2}, {"C", "G", 1},
+        {"D", "H", 5}, {"E", "I", 2}, {"F", "J", 3}, {"G", "K", 4}, {"H", "L", 1}, {"I", "L", 3},
+        {"J", "L", 2}, {"K", "L", 1}, {"D", "E", 2}
+    };
+    for (auto [u, v, w] : graph1Edges) {
+        graph1.addEdge(u, v, w);
+    }
+
+    
+    cout << "==================== 图1 测试结果 ====================" << endl;
+   
+    cout << "\n1. 图1邻接矩阵：" << endl;
+    graph1.printAdjMatrix();
+
+    
+    cout << "\n2. 从A出发的遍历结果：" << endl;
+    vector<string> bfsOrder = BFS(graph1, "A");
+    printTraversal("BFS", bfsOrder);
+    vector<string> dfsOrder = DFS(graph1, "A");
+    printTraversal("DFS", dfsOrder);
+
+    
+    cout << "\n3. 从A出发的最短路径（Dijkstra）：" << endl;
+    DijkstraRes dijkstraRes = Dijkstra(graph1, "A");
+    printShortestPaths(dijkstraRes, "A");
+
+    cout << "\n4. 图1最小支撑树（Prim）：" << endl;
+    vector<Edge> mst = Prim(graph1, "A");
+    printMST(mst);
+
+    
+    vector<string> graph2Nodes = {"1", "2", "3", "4", "5", "6", "7", "8"};
+    UndirectedGraph graph2(graph2Nodes);
+    
+    vector<pair<string, string>> graph2Edges = {
+        {"1", "2"}, {"2", "3"}, {"3", "1"}, {"2", "4"}, {"4", "5"}, {"5", "6"},
+        {"6", "4"}, {"5", "7"}, {"7", "8"}, {"8", "5"}
+    };
+    for (auto [u, v] : graph2Edges) {
+        graph2.addEdge(u, v);
+    }
+
+   
+    cout << "\n\n==================== 图2 测试结果 ====================" << endl;
+    cout << "4. 不同起点的双连通分量与关节点（Tarjan）：" << endl;
+    vector<string> testStarts = {"1", "4", "7"}; // 选取3个不同起点
+    vector<TarjanRes> tarjanResults;
+
+    
+    for (const string& start : testStarts) {
+        TarjanRes res = Tarjan(graph2, start);
+        tarjanResults.push_back(res);
+        printTarjanRes(res, start);
+    }
+
+    
+    bool allSame = true;
+    if (tarjanResults.size() >= 2) {
+        
+        auto firstAP = tarjanResults[0].articulationPoints;
+        auto firstBCC = normalizeBCC(tarjanResults[0].bcc);
+
+        for (int i = 1; i < tarjanResults.size(); ++i) {
+            auto currAP = tarjanResults[i].articulationPoints;
+            auto currBCC = normalizeBCC(tarjanResults[i].bcc);
+
+            if (currAP != firstAP || currBCC != firstBCC) {
+                allSame = false;
+                break;
+            }
+        }
+    }
+
+    cout << "\n结论：图2不同起点下双连通分量与关节点结果" << (allSame ? "一致" : "不一致") << endl;
+
+    return 0;
+}
