@@ -1,0 +1,243 @@
+#include <iostream>
+#include <fstream>
+#include <cstring>
+#include <queue>
+#include <vector>
+#include <string>
+using namespace std;
+
+
+typedef int Rank;
+const int LETTER_CNT = 26; 
+
+class Bitmap { 
+private: 
+    unsigned char* M;      
+    Rank N, _sz;           
+    void init(Rank n)       
+    { 
+        M = new unsigned char[N = (n + 7) / 8]; 
+        memset(M, 0, N); 
+        _sz = 0; 
+    } 
+public: 
+    Bitmap(Rank n = 8) { init(n); } 
+    Bitmap(char* file, Rank n = 8) { 
+        init(n); 
+        FILE* fp = fopen(file, "r"); 
+        fread(M, sizeof(char), N, fp); 
+        fclose(fp); 
+        for (Rank k = 0, _sz = 0; k < n; k++) 
+            _sz += test(k); 
+    } 
+    ~Bitmap() { delete[] M; M = NULL; _sz = 0; } 
+    Rank size() { return _sz; } 
+    void set(Rank k) { 
+        expand(k); 
+        _sz++; 
+        M[k >> 3] |= (0x80 >> (k & 0x07)); 
+    } 
+    void clear(Rank k) { 
+        expand(k); 
+        _sz--; 
+        M[k >> 3] &= ~(0x80 >> (k & 0x07)); 
+    } 
+    bool test(Rank k) { 
+        expand(k); 
+        return M[k >> 3] & (0x80 >> (k & 0x07)); 
+    } 
+    void dump(char* file) { 
+        FILE* fp = fopen(file, "w"); 
+        fwrite(M, sizeof(char), N, fp); 
+        fclose(fp); 
+    } 
+    char* bits2string(Rank n) { 
+        expand(n - 1); 
+        char* s = new char[n + 1]; 
+        s[n] = '\0'; 
+        for (Rank i = 0; i < n; i++) 
+            s[i] = test(i) ? '1' : '0'; 
+        return s; 
+    } 
+    void expand(Rank k) { 
+        if (k < 8 * N) return; 
+        Rank oldN = N; 
+        unsigned char* oldM = M; 
+        init(2 * k);
+        memcpy(M, oldM, oldN); 
+        delete[] oldM; 
+    } 
+};
+
+typedef Bitmap HuffCode;
+
+struct HuffNode {
+    char ch;          
+    int weight;       
+    HuffNode* left;  
+    HuffNode* right; 
+
+    HuffNode(char c = '#', int w = 0, HuffNode* l = nullptr, HuffNode* r = nullptr) {
+        ch = c;
+        weight = w;
+        left = l;
+        right = r;
+    }
+
+    ~HuffNode() {
+        if (left) delete left;
+        if (right) delete right;
+    }
+};
+
+struct CompareNode {
+    bool operator()(HuffNode* a, HuffNode* b) {
+        return a->weight > b->weight; 
+    }
+};
+
+class HuffmanCoder {
+private:
+    HuffNode* root;               
+    HuffCode* huffCodes[LETTER_CNT];
+    int codeLen[LETTER_CNT];       
+
+    void generateCode(HuffNode* node, HuffCode* tempCode, int currentLen) {
+        if (!node) return;
+
+        
+        if (node->ch != '#') {
+            int idx = node->ch - 'a'; 
+            huffCodes[idx] = new HuffCode(*tempCode); 
+            codeLen[idx] = currentLen;               
+            return;
+        }
+
+        generateCode(node->left, tempCode, currentLen + 1);
+
+        tempCode->set(currentLen);
+        generateCode(node->right, tempCode, currentLen + 1);
+        tempCode->clear(currentLen);
+    }
+
+public:
+    HuffmanCoder() {
+        root = nullptr;
+        memset(huffCodes, 0, sizeof(huffCodes));
+        memset(codeLen, 0, sizeof(codeLen));    
+    }
+
+    ~HuffmanCoder() {
+        if (root) delete root;
+        for (int i = 0; i < LETTER_CNT; i++) {
+            if (huffCodes[i]) delete huffCodes[i];
+        }
+    }
+
+    void countWeights(const string& text, int weights[]) {
+        memset(weights, 0, LETTER_CNT * sizeof(int));
+        for (char c : text) {
+            if (c >= 'A' && c <= 'Z') c += 32;
+            if (c >= 'a' && c <= 'z') {
+                int idx = c - 'a';
+                weights[idx]++; 
+            }
+        }
+    }
+
+    void buildHuffTree(int weights[]) {
+        priority_queue<HuffNode*, vector<HuffNode*>, CompareNode> pq;
+        for (int i = 0; i < LETTER_CNT; i++) {
+            if (weights[i] > 0) {
+                char ch = 'a' + i;
+                pq.push(new HuffNode(ch, weights[i]));
+            }
+        }
+
+        while (pq.size() > 1) {
+            HuffNode* a = pq.top(); pq.pop();
+            HuffNode* b = pq.top(); pq.pop();
+
+            HuffNode* parent = new HuffNode('#', a->weight + b->weight, a, b);
+            pq.push(parent); 
+        }
+
+        if (!pq.empty()) root = pq.top();
+    }
+
+    void buildHuffCode() {
+        if (!root) {
+            cout << "HuffTree未构建，无法生成编码！" << endl;
+            return;
+        }
+        HuffCode* tempCode = new HuffCode(); 
+        generateCode(root, tempCode, 0);     
+        delete tempCode;                    
+    }
+
+    string encodeWord(const string& word) {
+        string result;
+        for (char c : word) {
+            char lowerC = tolower(c);
+            if (lowerC < 'a' || lowerC > 'z') {
+                result += "[非法字符]";
+                continue;
+            }
+            int idx = lowerC - 'a';
+            if (!huffCodes[idx]) {
+                result += "[无编码]";
+                continue;
+            }
+            char* codeStr = huffCodes[idx]->bits2string(codeLen[idx]);
+            result += codeStr;
+            result += " "; 
+            delete[] codeStr; 
+        }
+        return result;
+    }
+
+    void printCodeTable() {
+        cout << "\n=== Huffman编码表（字母-编码）===" << endl;
+        for (int i = 0; i < LETTER_CNT; i++) {
+            if (huffCodes[i]) {
+                char ch = 'a' + i;
+                char* codeStr = huffCodes[i]->bits2string(codeLen[i]);
+                cout << ch << " : " << codeStr << endl;
+                delete[] codeStr;
+            }
+        }
+    }
+};
+
+int main() {
+    string dreamText = "I have a dream that one day this nation will rise up and live out the true meaning of its creed "
+                       "we hold these truths to be self evident that all men are created equal "
+                       "I have a dream that one day on the red hills of Georgia the sons of former slaves and the sons of former slave owners will be able to sit down together at the table of brotherhood "
+                       "I have a dream that my four little children will one day live in a nation where they will not be judged by the color of their skin but by the content of their character";
+
+  
+    HuffmanCoder coder;
+    int letterWeights[LETTER_CNT] = {0};
+
+   
+    coder.countWeights(dreamText, letterWeights);
+
+   
+    coder.buildHuffTree(letterWeights);
+
+  
+    coder.buildHuffCode();
+
+   
+    coder.printCodeTable();
+
+    
+    vector<string> targetWords = {"dream", "hope", "freedom"};
+    cout << "\n=== 单词编码结果 ===" << endl;
+    for (const string& word : targetWords) {
+        string code = coder.encodeWord(word);
+        cout << word << " : " << code << endl;
+    }
+
+    return 0;
+}
