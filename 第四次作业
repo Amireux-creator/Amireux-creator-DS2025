@@ -1,0 +1,279 @@
+#include <iostream>
+#include <vector>
+#include <ctime>
+#include <cstdlib>
+#include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <chrono>
+#include <limits>
+
+using namespace std;
+using namespace chrono;
+
+struct BoundingBox {
+    float x1, y1, x2, y2;
+    float confidence;
+    float area;
+
+    BoundingBox(float x1 = 0, float y1 = 0, float x2 = 0, float y2 = 0, float conf = 0)
+        : x1(x1), y1(y1), x2(x2), y2(y2), confidence(conf) {
+        area = (x2 - x1) * (y2 - y1);
+    }
+};
+
+namespace Sorters {
+    int partition(vector<BoundingBox>& arr, int low, int high) {
+        float pivot = arr[high].confidence;
+        int i = low - 1;
+        for (int j = low; j < high; j++) {
+            if (arr[j].confidence >= pivot) {
+                i++;
+                swap(arr[i], arr[j]);
+            }
+        }
+        swap(arr[i + 1], arr[high]);
+        return i + 1;
+    }
+
+    void quickSort(vector<BoundingBox>& arr, int low, int high) {
+        if (low < high) {
+            int pi = partition(arr, low, high);
+            quickSort(arr, low, pi - 1);
+            quickSort(arr, pi + 1, high);
+        }
+    }
+
+    void merge(vector<BoundingBox>& arr, int left, int mid, int right) {
+        int n1 = mid - left + 1;
+        int n2 = right - mid;
+        vector<BoundingBox> L(n1), R(n2);
+
+        for (int i = 0; i < n1; i++) L[i] = arr[left + i];
+        for (int j = 0; j < n2; j++) R[j] = arr[mid + 1 + j];
+
+        int i = 0, j = 0, k = left;
+        while (i < n1 && j < n2) {
+            if (L[i].confidence >= R[j].confidence) {
+                arr[k++] = L[i++];
+            } else {
+                arr[k++] = R[j++];
+            }
+        }
+        while (i < n1) arr[k++] = L[i++];
+        while (j < n2) arr[k++] = R[j++];
+    }
+
+    void mergeSort(vector<BoundingBox>& arr, int left, int right) {
+        if (left < right) {
+            int mid = left + (right - left) / 2;
+            mergeSort(arr, left, mid);
+            mergeSort(arr, mid + 1, right);
+            merge(arr, left, mid, right);
+        }
+    }
+
+    void bubbleSort(vector<BoundingBox>& arr) {
+        int n = arr.size();
+        bool swapped;
+        for (int i = 0; i < n - 1; i++) {
+            swapped = false;
+            for (int j = 0; j < n - i - 1; j++) {
+                if (arr[j].confidence < arr[j + 1].confidence) {
+                    swap(arr[j], arr[j + 1]);
+                    swapped = true;
+                }
+            }
+            if (!swapped) break;
+        }
+    }
+
+    void selectionSort(vector<BoundingBox>& arr) {
+        int n = arr.size();
+        for (int i = 0; i < n - 1; i++) {
+            int maxIdx = i;
+            for (int j = i + 1; j < n; j++) {
+                if (arr[j].confidence > arr[maxIdx].confidence) {
+                    maxIdx = j;
+                }
+            }
+            swap(arr[i], arr[maxIdx]);
+        }
+    }
+}
+
+namespace DataGenerator {
+    void initSeed() {
+        srand((unsigned int)time(nullptr));
+    }
+
+    float randomFloat(float min, float max) {
+        return min + (float)rand() / RAND_MAX * (max - min);
+    }
+
+    vector<BoundingBox> generateRandomBoxes(int count) {
+        vector<BoundingBox> boxes;
+        boxes.reserve(count);
+        const float imgW = 640.0f;
+        const float imgH = 480.0f;
+        const float minSize = 20.0f;
+        const float maxSize = 100.0f;
+
+        for (int i = 0; i < count; i++) {
+            float w = randomFloat(minSize, maxSize);
+            float h = randomFloat(minSize, maxSize);
+            float x1 = randomFloat(0, imgW - w);
+            float y1 = randomFloat(0, imgH - h);
+            float x2 = x1 + w;
+            float y2 = y1 + h;
+            float conf = randomFloat(0.5f, 1.0f);
+            boxes.emplace_back(x1, y1, x2, y2, conf);
+        }
+        return boxes;
+    }
+
+    vector<BoundingBox> generateClusteredBoxes(int count) {
+        vector<BoundingBox> boxes;
+        boxes.reserve(count);
+        const float imgW = 640.0f;
+        const float imgH = 480.0f;
+        const float minSize = 15.0f;
+        const float maxSize = 80.0f;
+        const float clusterRadius = 120.0f;
+        const float centerX = imgW / 2.0f;
+        const float centerY = imgH / 2.0f;
+
+        for (int i = 0; i < count; i++) {
+            float offsetX = randomFloat(-clusterRadius, clusterRadius);
+            float offsetY = randomFloat(-clusterRadius, clusterRadius);
+            float w = randomFloat(minSize, maxSize);
+            float h = randomFloat(minSize, maxSize);
+            float x1 = max(0.0f, centerX + offsetX - w/2);
+            float y1 = max(0.0f, centerY + offsetY - h/2);
+            float x2 = min(imgW, x1 + w);
+            float y2 = min(imgH, y1 + h);
+            float conf = randomFloat(0.5f, 1.0f);
+            boxes.emplace_back(x1, y1, x2, y2, conf);
+        }
+        return boxes;
+    }
+}
+
+namespace NMS {
+    float calculateIOU(const BoundingBox& a, const BoundingBox& b) {
+        float x1 = max(a.x1, b.x1);
+        float y1 = max(a.y1, b.y1);
+        float x2 = min(a.x2, b.x2);
+        float y2 = min(a.y2, b.y2);
+
+        float interW = max(0.0f, x2 - x1);
+        float interH = max(0.0f, y2 - y1);
+        float interArea = interW * interH;
+        if (interArea <= 0) return 0.0f;
+
+        float unionArea = a.area + b.area - interArea;
+        return interArea / unionArea;
+    }
+
+    vector<BoundingBox> optimizedNMS(vector<BoundingBox>& boxes, float iouThreshold = 0.5f) {
+        vector<BoundingBox> result;
+        if (boxes.empty()) return result;
+
+        while (!boxes.empty()) {
+            BoundingBox topBox = boxes[0];
+            result.push_back(topBox);
+            boxes.erase(boxes.begin());
+
+            for (auto it = boxes.end() - 1; it >= boxes.begin(); --it) {
+                if (calculateIOU(topBox, *it) >= iouThreshold) {
+                    boxes.erase(it);
+                }
+            }
+        }
+        return result;
+    }
+}
+
+struct SortAlgorithm {
+    string name;
+    void (*func)(vector<BoundingBox>&);
+    string complexity;
+    int maxTestSize;
+};
+
+long long testPerformance(
+    vector<BoundingBox> boxes, 
+    const SortAlgorithm& algo,
+    const string& dataType,
+    int dataSize
+) {
+    if (dataSize > algo.maxTestSize) {
+        cout << left << setw(15) << algo.name
+             << left << setw(15) << dataType
+             << left << setw(10) << dataSize
+             << left << setw(15) << "跳过（低效算法）"
+             << left << setw(10) << "-" << endl;
+        return -1;
+    }
+
+    auto start = high_resolution_clock::now();
+
+    algo.func(boxes);
+
+    vector<BoundingBox> nmsResult = NMS::optimizedNMS(boxes);
+
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start);
+
+    cout << left << setw(15) << algo.name
+         << left << setw(15) << dataType
+         << left << setw(10) << dataSize
+         << left << setw(15) << duration.count() << "微秒"
+         << left << setw(10) << nmsResult.size() << "个框" << endl;
+
+    return duration.count();
+}
+
+void quickSortWrapper(vector<BoundingBox>& arr) {
+    if (arr.empty()) return;
+    Sorters::quickSort(arr, 0, arr.size() - 1);
+}
+
+void mergeSortWrapper(vector<BoundingBox>& arr) {
+    if (arr.empty()) return;
+    Sorters::mergeSort(arr, 0, arr.size() - 1);
+}
+
+int main() {
+    DataGenerator::initSeed();
+    const vector<int> dataSizes = {100, 1000, 5000, 10000};
+    const vector<string> dataTypes = {"随机分布", "聚集分布"};
+
+    vector<SortAlgorithm> sortAlgorithms = {
+        {"快速排序", quickSortWrapper, "O(nlogn)", 10000},
+        {"归并排序", mergeSortWrapper, "O(nlogn)", 10000},
+        {"冒泡排序", Sorters::bubbleSort, "O(n2)", 1000},
+        {"选择排序", Sorters::selectionSort, "O(n2)", 1000}
+    };
+    cout << left << setw(15) << "排序算法"
+         << left << setw(15) << "数据分布"
+         << left << setw(10) << "数据规模"
+         << left << setw(15) << "运行时间"
+         << left << setw(10) << "NMS输出" << endl;
+    cout << "==========================================================================================" << endl;
+
+    for (const auto& size : dataSizes) {
+        for (const auto& type : dataTypes) {
+            vector<BoundingBox> boxes = (type == "随机分布") 
+                ? DataGenerator::generateRandomBoxes(size) 
+                : DataGenerator::generateClusteredBoxes(size);
+
+            for (const auto& algo : sortAlgorithms) {
+                vector<BoundingBox> boxesCopy = boxes;
+                testPerformance(boxesCopy, algo, type, size);
+            }
+            cout << "------------------------------------------------------------------------------------------" << endl;
+        }
+    }
+    return 0;
+}
